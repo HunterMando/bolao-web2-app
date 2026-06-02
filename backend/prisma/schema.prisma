@@ -1,0 +1,114 @@
+generator client {
+  provider = "prisma-client-js" 
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------------------------------------------------------
+// 1. USUÁRIO
+// ----------------------------------------------------------------------
+model Usuario {
+  id           Int           @id @default(autoincrement()) // Todo usuário deve ter id único
+  nome         String
+  cpf          String        @unique // cpf deve ser único no sistema
+  email        String        @unique // email deve ser único no sistema
+  telefone     String?
+  tipo_usuario String        @default("COMUM") // Ex: COMUM, ADMIN
+  senha        String
+  status       Boolean       @default(true) // Ativo/habilitado para apostar
+
+  apostas      ApostaBolao[] // Relação 1:N com Aposta/Bolao
+
+  @@map("usuario")
+}
+
+// ----------------------------------------------------------------------
+// 2. TIPO DE CAMPANHA
+// ----------------------------------------------------------------------
+model TipoCampanha {
+  id        Int        @id @default(autoincrement())
+  descricao String
+  status    Boolean    @default(true)
+
+  campanhas Campanha[] // Relação 1:N com Campanha
+
+  @@map("tipo_campanha")
+}
+
+// ----------------------------------------------------------------------
+// 3. CAMPANHA
+// ----------------------------------------------------------------------
+model Campanha {
+  id               Int       @id @default(autoincrement())
+  nome             String
+  dt_inicio        DateTime
+  dt_fim           DateTime  // dt_fim deve ser maior que ou igual a dt_inicio (validação será no controller)
+  taxa_operacional Float
+  valor_bolao      Float
+  codigo_campanha  String    @unique // O codigo_campanha deve ser único no sistema
+  status           Boolean   @default(true) // Controla captação aberta/fechada
+
+  tipo_campanha_id Int
+  tipo_campanha    TipoCampanha @relation(fields: [tipo_campanha_id], references: [id]) // Chave Estrangeira
+  
+  opcoes           CampanhaOpcao[] // Zero ou muitas opções
+
+  @@map("campanha")
+}
+
+// ----------------------------------------------------------------------
+// 4. OPÇÕES DA CAMPANHA (Resultados possíveis)
+// ----------------------------------------------------------------------
+model CampanhaOpcao {
+  id                 Int      @id @default(autoincrement())
+  descricao          String
+  eh_resultado_final Boolean  @default(false) // Máximo uma opção com true por campanha (regra do controller)
+  status             Boolean  @default(true)
+
+  campanha_id        Int
+  campanha           Campanha @relation(fields: [campanha_id], references: [id]) // Toda opção pertence a uma campanha
+
+  apostas            ApostaBolao[] // Apostas que escolheram esta opção
+
+  // O par (campanha_id, descricao) deve ser único
+  @@unique([campanha_id, descricao])
+  
+  @@map("campanha_opcoes")
+}
+
+// ----------------------------------------------------------------------
+// 5. MEIO DE PAGAMENTO
+// ----------------------------------------------------------------------
+model MeioPagamento {
+  id        Int      @id @default(autoincrement())
+  descricao String
+  status    Boolean  @default(true)
+
+  apostas   ApostaBolao[]
+
+  @@map("meio_pagamento")
+}
+
+// ----------------------------------------------------------------------
+// 6. APOSTA / BOLÃO
+// ----------------------------------------------------------------------
+model ApostaBolao {
+  id                Int      @id @default(autoincrement())
+  dt_criacao        DateTime @default(now())
+  comprovante       String?  // Opcional
+  status            String   @default("PENDENTE") // PENDENTE, CONFIRMADO, CANCELADO
+
+  usuario_id        Int
+  usuario           Usuario  @relation(fields: [usuario_id], references: [id])
+
+  meio_pagamento_id Int
+  meio_pagamento    MeioPagamento @relation(fields: [meio_pagamento_id], references: [id])
+
+  campanha_opcao_id Int
+  campanha_opcao    CampanhaOpcao @relation(fields: [campanha_opcao_id], references: [id])
+
+  @@map("aposta_bolao")
+}

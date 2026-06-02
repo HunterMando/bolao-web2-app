@@ -1,1 +1,1 @@
-# Sistema de Bolão e Apostas - Web 2
+# Sistema de Bolão e Apostas - DAW 2
