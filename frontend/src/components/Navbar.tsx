@@ -1,8 +1,7 @@
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 
 export default function Navbar() {
     const navigate = useNavigate();
-    const location = useLocation();
     
     // Recupera o usuário
     const usuarioString = localStorage.getItem('usuario');
