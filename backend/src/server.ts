@@ -1,4 +1,5 @@
 import express, { Request, Response } from 'express';
+import { setupSwagger } from './swagger';
 
 import cors from 'cors';
 
@@ -12,6 +13,7 @@ import dashboardRoutes from './api/dashboard/routes';
 
 const app = express();
 const port = 3000;
+setupSwagger(app);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
