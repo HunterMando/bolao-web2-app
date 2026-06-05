@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 
 import Navbar from './components/Navbar';
@@ -9,6 +9,8 @@ import NovaCampanha from './pages/NovaCampanha';
 import Cadastro from './pages/Cadastro';
 import ProtectedRoute from './components/ProtectedRoute';
 import ResultadoCampanha from './pages/ResultadoCampanha';
+import MeusBoloes from './pages/MeusBoloes';
+import AdminDashboard from './pages/AdminDashboard'; // Importação do Dashboard
 
 function App() {
   return (
@@ -17,7 +19,7 @@ function App() {
       <Toaster position="top-right" reverseOrder={false} />
 
       <Routes>
-        {/* Rotas Públicas (Qualquer pessoa pode aceder) */}
+        {/* Rotas Públicas */}
         <Route path="/" element={<Campanhas />} />
         <Route path="/login" element={<Login />} />
         <Route path="/cadastro" element={<Cadastro />} />
@@ -29,6 +31,13 @@ function App() {
           </ProtectedRoute>
         } />
 
+        {/* Carteira de Apostas */}
+        <Route path="/meus-boloes" element={
+          <ProtectedRoute>
+            <MeusBoloes />
+          </ProtectedRoute>
+        } />
+
         {/* Rotas Exclusivas de ADMIN */}
         <Route path="/nova-campanha" element={
           <ProtectedRoute adminOnly={true}>
@@ -36,12 +45,21 @@ function App() {
           </ProtectedRoute>
         } />
 
-        {/* Rota Protegida (só para ADMIN) */}
         <Route path="/resultado/:campanhaId" element={
           <ProtectedRoute adminOnly={true}>
             <ResultadoCampanha />
           </ProtectedRoute>
         } />
+
+        {/* Nova Rota: Admin Dashboard */}
+        <Route path="/admin/dashboard" element={
+          <ProtectedRoute adminOnly={true}>
+            <AdminDashboard />
+          </ProtectedRoute>
+        } />
+
+        {/* Rota Fallback (Redireciona para home se a rota não existir) */}
+        <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </>
   );

@@ -21,25 +21,19 @@ export default function NovaAposta() {
         const carregarDados = async () => {
             try {
                 // 1. Tenta buscar os Palpites
-                // ATENÇÃO: Verifique se no seu backend a rota é exatamente essa!
                 const resOpcoes = await api.get(`/campanhas-opcoes/campanha/${campanhaId}`);
                 setOpcoes(resOpcoes.data);
                 if (resOpcoes.data.length > 0) {
-                    // Se 'campanha' não vier do Back-end, ele não quebra e deixa o título em branco
                     setCampanhaNome(resOpcoes.data[0]?.campanha?.nome || '');
                 }
 
                 // 2. Tenta buscar os Meios de Pagamento
-                // ATENÇÃO: Verifique se no seu backend a rota é exatamente essa!
                 const resPagamentos = await api.get('/meios-pagamento');
                 setMeiosPagamento(resPagamentos.data);
 
             } catch (error: any) {
-                // O NOSSO ESPIÃO: Mostra o erro real no console do navegador
                 console.error("🔥 FALHA NA API:", error.response || error);
-
-                // Mostra um erro mais descritivo na tela
-                const msgErro = error.response?.data?.erro || 'Erro ao carregar dados. Verifique o F12.';
+                const msgErro = error.response?.data?.erro || 'Erro ao carregar dados. Verifique o console.';
                 toast.error(msgErro);
             } finally {
                 setCarregando(false);
@@ -71,6 +65,7 @@ export default function NovaAposta() {
     const selectPalpites = opcoes.map(o => ({ value: o.id, label: o.descricao }));
     const selectPagamentos = meiosPagamento.map(m => ({ value: m.id, label: m.descricao }));
 
+    // ESTILOS PERSONALIZADOS DO SELECT COM SCROLLBAR PADRONIZADA
     const customStyles = {
         control: (base: any, state: any) => ({
             ...base,
@@ -84,12 +79,23 @@ export default function NovaAposta() {
         option: (base: any) => ({
             ...base,
             cursor: 'pointer'
+        }),
+        menu: (base: any) => ({
+            ...base,
+            zIndex: 100 
+        }),
+        menuList: (base: any) => ({
+            ...base,
+            // Scrollbar padronizada com cores mais escuras para contraste perfeito
+            '::-webkit-scrollbar': { width: '8px' },
+            '::-webkit-scrollbar-track': { background: 'transparent' },
+            '::-webkit-scrollbar-thumb': { background: '#6b7280', borderRadius: '8px' }, // Cor cinza escuro
+            '::-webkit-scrollbar-thumb:hover': { background: '#4b5563' } // Cor ainda mais escura no hover
         })
     };
 
     if (carregando) {
         return (
-            // Trocamos o marginTop por minHeight: '60vh' para centralizar perfeitamente!
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
                 <div style={{ width: '40px', height: '40px', border: '4px solid #e5e7eb', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
                 <h2 style={{ color: '#4b5563', marginTop: '20px' }}>Preparando o seu bilhete...</h2>
@@ -103,7 +109,6 @@ export default function NovaAposta() {
             <div className="card" style={{ maxWidth: '500px', width: '100%' }}>
                 <h2 className="titulo">Confirmar Aposta</h2>
 
-                {/* O troféu foi removido e o espaçamento ajustado */}
                 {campanhaNome && (
                     <h4 style={{ textAlign: 'center', color: '#3b82f6', marginBottom: '25px', fontSize: '1.2rem' }}>
                         {campanhaNome}
@@ -119,6 +124,8 @@ export default function NovaAposta() {
                             placeholder="Selecione o resultado esperado..."
                             noOptionsMessage={() => "Nenhuma opção encontrada."}
                             onChange={(opcao: any) => setForm({ ...form, campanha_opcao_id: opcao.value })}
+                            maxMenuHeight={160} 
+                            menuPlacement="auto" 
                         />
                     </div>
 
@@ -129,6 +136,8 @@ export default function NovaAposta() {
                             styles={customStyles}
                             placeholder="Como você vai pagar?"
                             onChange={(opcao: any) => setForm({ ...form, meio_pagamento_id: opcao.value })}
+                            maxMenuHeight={160} 
+                            menuPlacement="auto" 
                         />
                     </div>
 

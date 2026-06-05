@@ -1,57 +1,115 @@
-// src/api/aposta/controller.ts
 import { Request, Response } from 'express';
 import httpStatus from 'http-status';
 import prisma from '../../prisma';
-import { CreateApostaDTO } from './model';
+
+// GET /apostas/minhas (Calcula os ganhos)
+export const listarMinhas = async (req: Request, res: Response): Promise<any> => {
+    try {
+        const reqAny = req as any;
+        const usuario_id = reqAny.usuario?.id || reqAny.userId; 
+        
+        const apostas = await prisma.apostaBolao.findMany({
+            where: { usuario_id: Number(usuario_id) },
+            include: { campanha_opcao: { include: { campanha: true } } },
+            orderBy: { id: 'desc' } 
+        });
+
+        const apostasComPremio = await Promise.all(apostas.map(async (aposta) => {
+            let valor_premio = 0;
+
+            if (aposta.status === 'VENCEDOR') {
+                const campanhaId = aposta.campanha_opcao?.campanha_id;
+                
+                // Busca todas as apostas daquela campanha para calcular o rateio
+                const todasApostas = await prisma.apostaBolao.findMany({
+                    where: { campanha_opcao: { campanha_id: campanhaId } },
+                    include: { campanha_opcao: true }
+                });
+
+                const valorBolao = Number(aposta.campanha_opcao?.campanha?.valor_bolao || 0);
+                const taxa = Number(aposta.campanha_opcao?.campanha?.taxa_operacional || 0) / 100;
+                
+                const poteTotal = todasApostas.length * valorBolao;
+                const valorTaxaAdmin = poteTotal * taxa;
+                const poteLiquido = poteTotal - valorTaxaAdmin;
+
+                const qtdGanhadores = todasApostas.filter(a => a.campanha_opcao_id === aposta.campanha_opcao_id).length;
+                valor_premio = qtdGanhadores > 0 ? poteLiquido / qtdGanhadores : 0;
+            }
+
+            return { ...aposta, valor_premio };
+        }));
+        
+        return res.status(httpStatus.OK).json(apostasComPremio);
+    } catch (error) {
+        return res.status(500).json({ erro: 'Erro ao buscar histórico de apostas.' });
+    }
+};
 
 // POST /apostas
 export const create = async (req: Request, res: Response): Promise<any> => {
     try {
-        // SEGURANÇA MÁXIMA: O ID vem do crachá (Token JWT), não do formulário!
-        const usuario_id = (req as any).usuario.id; 
-        
+        const reqAny = req as any;
+
+        // 1. SEGURANÇA: Autenticação
+        const usuario_id = reqAny.usuario?.id || reqAny.userId || reqAny.usuarioId || reqAny.usuario_id; 
+
+        if (!usuario_id) {
+            return res.status(401).json({ erro: 'Utilizador não autenticado pelo token.' });
+        }
+
         const { meio_pagamento_id, campanha_opcao_id, comprovante } = req.body;
 
-        // 1. Validação de Regra de Negócio: A campanha associada a esta opção está aberta?
-        const opcao = await prisma.campanhaOpcao.findUnique({ // <-- "campanhaOpcao" no singular
+        // 2. Validação da Opção e da Campanha
+        const opcao = await prisma.campanhaOpcao.findUnique({ 
             where: { id: Number(campanha_opcao_id) },
             include: { campanha: true }
         });
 
         if (!opcao) {
-            return res.status(httpStatus.NOT_FOUND).json({ erro: 'Opção de palpite não encontrada.' });
+            return res.status(404).json({ erro: 'Opção de palpite não encontrada.' });
         }
 
-        if (opcao.campanha.status === false) {
-            return res.status(httpStatus.FORBIDDEN).json({ erro: 'Esta campanha já foi encerrada e não aceita novas apostas.' });
+        // 🛡️ TRAVA 2: Validação Temporal de Última Linha na Aposta
+        const dataAtual = new Date();
+        const dataFimCampanha = new Date(opcao.campanha.dt_fim);
+
+        if (opcao.campanha.status === false || dataFimCampanha <= dataAtual) {
+            // Se o tempo passou, mas a campanha ainda está como aberta no BD, encerramos agora mesmo!
+            if (opcao.campanha.status === true) {
+                await prisma.campanha.update({
+                    where: { id: opcao.campanha.id },
+                    data: { status: false }
+                });
+            }
+            return res.status(400).json({ erro: 'Tempo esgotado! Esta campanha já foi encerrada e não aceita mais apostas.' });
         }
 
-        // 2. Gravar a aposta no banco[cite: 2]
+        // 3. Gravar a aposta se tudo estiver correto
         const novaAposta = await prisma.apostaBolao.create({
             data: {
-                usuario_id: usuario_id,
+                usuario_id: Number(usuario_id),
                 meio_pagamento_id: Number(meio_pagamento_id),
                 campanha_opcao_id: Number(campanha_opcao_id),
-                comprovante: comprovante || null, // Comprovante é opcional
-                status: 'PENDENTE' // Status inicial padrão
+                comprovante: comprovante || null,
+                status: 'PENDENTE'
             }
         });
 
-        return res.status(httpStatus.CREATED).json({
+        return res.status(201).json({
             mensagem: 'Aposta realizada com sucesso!',
             aposta: novaAposta
         });
 
     } catch (error) {
-        console.error(error);
-        return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({ erro: 'Erro interno ao registrar aposta.' });
+        console.error('🔥 ERRO DO PRISMA AO CRIAR APOSTA:', error);
+        return res.status(500).json({ erro: 'Erro interno ao registrar aposta.' });
     }
 };
 
 // GET /apostas
 export const getAll = async (req: Request, res: Response) => {
     try {
-        // Trazemos as apostas com os dados do Utilizador e da Opção para mostrar no ecrã (Front-end)
         const apostas = await prisma.apostaBolao.findMany({
             include: {
                 usuario: { select: { nome: true, email: true } },
@@ -61,32 +119,6 @@ export const getAll = async (req: Request, res: Response) => {
         });
         res.status(httpStatus.OK).json(apostas);
     } catch (error) {
-        res.status(httpStatus.INTERNAL_SERVER_ERROR).json({ erro: 'Erro ao buscar apostas.' });
-    }
-};
-
-// GET /apostas/minhas (Função para listar as apostas apenas do utilizador logado)
-export const listarMinhas = async (req: Request, res: Response): Promise<any> => {
-    try {
-        // Usamos (req as any) para o TypeScript não bloquear a compilação
-        const usuario_id = (req as any).usuario.id; 
-        
-        // Corrigido para usar apostaBolao em vez de aposta
-        const apostas = await prisma.apostaBolao.findMany({
-            where: { usuario_id: usuario_id },
-            include: {
-                campanha_opcao: {
-                    include: {
-                        campanha: true 
-                    }
-                },
-                meio_pagamento: true
-            },
-            orderBy: { id: 'desc' } 
-        });
-        
-        return res.status(httpStatus.OK).json(apostas);
-    } catch (error) {
-        return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({ erro: 'Erro ao buscar o histórico de apostas.' });
+        res.status(httpStatus.INTERNAL_SERVER_ERROR).json({ erro: 'Erro ao buscar apostas globais.' });
     }
 };

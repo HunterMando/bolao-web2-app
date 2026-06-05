@@ -5,7 +5,7 @@ import { autenticar } from '../../middlewares/auth';
 
 const router = Router();
 
-router.post('/', apostaController.create);
+router.post('/', autenticar, apostaController.create);
 router.get('/', apostaController.getAll);
 router.get('/minhas', autenticar, apostaController.listarMinhas);
 

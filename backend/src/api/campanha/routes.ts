@@ -14,4 +14,8 @@ router.patch('/:id/encerrar', autenticar, isAdmin, campanhaController.encerrar);
 
 router.post('/:id/resultado', autenticar, isAdmin, campanhaController.definirResultado);
 
+router.patch('/:id/resultado', autenticar, campanhaController.definirResultado);
+
+router.get('/:id', campanhaController.getById);
+
 export default router;

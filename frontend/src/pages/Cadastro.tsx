@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import toast from 'react-hot-toast'; // <-- Trocando alert por toast
+import { useNavigate, Link } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import api from '../services/api';
+import Select from 'react-select'; // Importando o nosso select premium
 
 export default function Cadastro() {
     const navigate = useNavigate();
@@ -9,64 +10,196 @@ export default function Cadastro() {
         nome: '', cpf: '', email: '', telefone: '', tipo_usuario: 'COMUM', senha: ''
     });
 
+    // Estado para controlar a visibilidade da senha
+    const [mostrarSenha, setMostrarSenha] = useState(false);
+    const [carregando, setCarregando] = useState(false);
+
     const handleCadastro = async (e: React.FormEvent) => {
         e.preventDefault();
+        setCarregando(true);
         try {
             await api.post('/usuarios', form);
-            toast.success('Cadastro realizado com sucesso! Faça seu login.');
+            toast.success('Cadastro realizado com sucesso! Faça o seu login.');
             navigate('/login');
         } catch (error: any) {
             toast.error(error.response?.data?.erro || 'Erro ao realizar o cadastro.');
+        } finally {
+            setCarregando(false);
         }
     };
 
+    // Estilo padrão para os inputs (Idêntico ao da tela de Login)
+    const inputStyle = {
+        width: '100%', padding: '12px 16px', borderRadius: '8px', 
+        border: '1px solid #d1d5db', fontSize: '1rem', outline: 'none',
+        boxSizing: 'border-box' as 'border-box'
+    };
+
+    const labelStyle = {
+        display: 'block', marginBottom: '8px', fontWeight: '600', color: '#4b5563', fontSize: '0.95rem'
+    };
+
     return (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '20px' }}>
-            {/* Usando a classe card global */}
-            <div className="card" style={{ maxWidth: '450px' }}>
-                <h2 className="titulo">Criar Nova Conta</h2>
+        /* Mesma centralização da tela de Login */
+        <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            minHeight: 'calc(100vh - 120px)', 
+            padding: '40px 20px' 
+        }}>
+            <div className="card" style={{ width: '100%', maxWidth: '480px', padding: '40px' }}>
+                <h2 style={{ textAlign: 'center', marginBottom: '30px', color: '#111827' }}>Criar Nova Conta</h2>
                 
-                <form onSubmit={handleCadastro}>
-                    <div className="form-group">
-                        <label>Nome Completo</label>
-                        <input type="text" className="form-control" required value={form.nome} onChange={e => setForm({...form, nome: e.target.value})} />
+                <form onSubmit={handleCadastro} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    
+                    <div>
+                        <label style={labelStyle}>Nome Completo</label>
+                        <input 
+                            type="text" 
+                            required 
+                            value={form.nome} 
+                            onChange={e => setForm({...form, nome: e.target.value})} 
+                            style={inputStyle}
+                            placeholder="Digite o seu nome"
+                        />
                     </div>
 
-                    <div className="form-group">
-                        <label>CPF</label>
-                        <input type="text" className="form-control" required value={form.cpf} onChange={e => setForm({...form, cpf: e.target.value})} />
+                    <div>
+                        <label style={labelStyle}>CPF</label>
+                        <input 
+                            type="text" 
+                            required 
+                            value={form.cpf} 
+                            onChange={e => setForm({...form, cpf: e.target.value})} 
+                            style={inputStyle}
+                            placeholder="000.000.000-00"
+                        />
                     </div>
 
-                    <div className="form-group">
-                        <label>Telefone</label>
-                        <input type="text" className="form-control" required value={form.telefone} onChange={e => setForm({...form, telefone: e.target.value})} />
+                    <div>
+                        <label style={labelStyle}>Telefone</label>
+                        <input 
+                            type="text" 
+                            required 
+                            value={form.telefone} 
+                            onChange={e => setForm({...form, telefone: e.target.value})} 
+                            style={inputStyle}
+                            placeholder="(00) 00000-0000"
+                        />
                     </div>
 
-                    <div className="form-group">
-                        <label>E-mail</label>
-                        <input type="email" className="form-control" required value={form.email} onChange={e => setForm({...form, email: e.target.value})} />
+                    <div>
+                        <label style={labelStyle}>E-mail</label>
+                        <input 
+                            type="email" 
+                            required 
+                            value={form.email} 
+                            onChange={e => setForm({...form, email: e.target.value})} 
+                            style={inputStyle}
+                            placeholder="exemplo@email.com"
+                        />
                     </div>
 
-                    <div className="form-group">
-                        <label>Senha</label>
-                        <input type="password" className="form-control" required value={form.senha} onChange={e => setForm({...form, senha: e.target.value})} />
+                    <div>
+                        <label style={labelStyle}>Senha</label>
+                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                            <input
+                                type={mostrarSenha ? 'text' : 'password'}
+                                value={form.senha}
+                                onChange={e => setForm({...form, senha: e.target.value})}
+                                required
+                                placeholder="••••••••"
+                                style={{ ...inputStyle, paddingRight: '45px' }}
+                            />
+                            
+                            <button
+                                type="button"
+                                onClick={() => setMostrarSenha(!mostrarSenha)}
+                                style={{
+                                    position: 'absolute', right: '12px',
+                                    background: 'none', border: 'none', cursor: 'pointer',
+                                    color: '#6b7280', display: 'flex', alignItems: 'center', padding: '4px'
+                                }}
+                                title={mostrarSenha ? "Ocultar senha" : "Mostrar senha"}
+                            >
+                                {mostrarSenha ? (
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                                        <line x1="1" y1="1" x2="23" y2="23"></line>
+                                    </svg>
+                                ) : (
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                        <circle cx="12" cy="12" r="3"></circle>
+                                    </svg>
+                                )}
+                            </button>
+                        </div>
                     </div>
 
-                    <div className="form-group">
-                        <label>Tipo de Perfil (Apenas Testes)</label>
-                        <select className="form-control" value={form.tipo_usuario} onChange={e => setForm({...form, tipo_usuario: e.target.value})}>
-                            <option value="COMUM">Usuário Comum (Apostador)</option>
-                            <option value="ADMIN">Administrador (Cria Campanhas)</option>
-                        </select>
+                    <div>
+                        <label style={labelStyle}>Tipo de Perfil (Apenas Testes)</label>
+                        <Select 
+                            isDisabled={carregando}
+                            options={[
+                                { value: 'COMUM', label: 'Usuário Comum (Apostador)' },
+                                { value: 'ADMIN', label: 'Administrador (Cria Campanhas)' }
+                            ]}
+                            value={{
+                                value: form.tipo_usuario,
+                                label: form.tipo_usuario === 'ADMIN' ? 'Administrador (Cria Campanhas)' : 'Usuário Comum (Apostador)'
+                            }}
+                            onChange={(selecionado: any) => {
+                                setForm({...form, tipo_usuario: selecionado ? selecionado.value : 'COMUM'});
+                            }}
+                            maxMenuHeight={160} 
+                            styles={{ 
+                                menu: (base) => ({ ...base, zIndex: 100 }),
+                                control: (base) => ({ 
+                                    ...base, 
+                                    cursor: 'pointer',
+                                    padding: '2px', // Para alinhar visualmente com a altura dos outros inputs
+                                    borderRadius: '8px',
+                                    borderColor: '#d1d5db'
+                                }),
+                                option: (base) => ({ 
+                                    ...base, 
+                                    cursor: 'pointer'
+                                }),  
+                                menuList: (base) => ({
+                                    ...base,
+                                    '::-webkit-scrollbar': { width: '6px' },
+                                    '::-webkit-scrollbar-track': { background: '#f3f4f6', borderRadius: '8px' },
+                                    '::-webkit-scrollbar-thumb': { background: '#d1d5db', borderRadius: '8px' },
+                                    '::-webkit-scrollbar-thumb:hover': { background: '#9ca3af' }
+                                })
+                            }}
+                        />
                     </div>
 
-                    <div style={{ marginTop: '24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        <button type="submit" className="btn btn-primary">Cadastrar</button>
-                        <button type="button" className="btn btn-link" onClick={() => navigate('/login')}>
-                            Já tenho conta. Fazer Login
-                        </button>
-                    </div>
+                    <button 
+                        type="submit" 
+                        disabled={carregando}
+                        className="btn"
+                        style={{ 
+                            width: '100%', padding: '14px', backgroundColor: '#10b981', // Verde elegante para contrastar com o azul do login
+                            color: 'white', fontWeight: 'bold', borderRadius: '8px', border: 'none', 
+                            cursor: carregando ? 'not-allowed' : 'pointer', marginTop: '10px',
+                            transition: 'all 0.3s ease'
+                        }}
+                    >
+                        {carregando ? 'Cadastrando...' : 'Cadastrar'}
+                    </button>
                 </form>
+                
+                {/* O link de voltar formatado exatamente como no Login */}
+                <div style={{ textAlign: 'center', marginTop: '25px' }}>
+                    <Link to="/login" style={{ color: '#3b82f6', textDecoration: 'none', fontSize: '0.95rem', fontWeight: '500' }}>
+                        Já tenho conta. Fazer Login
+                    </Link>
+                </div>
+
             </div>
         </div>
     );
