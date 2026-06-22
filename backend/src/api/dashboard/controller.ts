@@ -18,9 +18,18 @@ export const getStats = async (req: Request, res: Response): Promise<any> => {
             where: { usuario_id: Number(adminId) }
         });
 
+        // 👇 NOVA LINHA: Conta as campanhas ativas SÓ DESTE ADMIN
+        const campanhasAtivas = await prisma.campanha.count({
+            where: { 
+                usuario_id: Number(adminId),
+                status: true // Assume que usa um campo booleano 'status' na tabela Campanha
+            }
+        });
+
         // 3. Conta apostas feitas SÓ NAS CAMPANHAS DESTE ADMIN
         const apostas = await prisma.apostaBolao.findMany({
             where: {
+                status: { notIn: ['CANCELADO', 'PENDENTE'] },
                 campanha_opcao: {
                     campanha: {
                         usuario_id: Number(adminId) // 👈 A MÁGICA DO ISOLAMENTO AQUI
@@ -44,7 +53,7 @@ export const getStats = async (req: Request, res: Response): Promise<any> => {
 
         return res.status(httpStatus.OK).json({
             totalCampanhas,
-            campanhasAtivas: 0, // Pode usar se quiser expandir o dashboard depois
+            campanhasAtivas,
             totalApostas,
             totalArrecadado
         });

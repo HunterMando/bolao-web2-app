@@ -10,7 +10,8 @@ import Cadastro from './pages/Cadastro';
 import ProtectedRoute from './components/ProtectedRoute';
 import ResultadoCampanha from './pages/ResultadoCampanha';
 import MeusBoloes from './pages/MeusBoloes';
-import AdminDashboard from './pages/AdminDashboard'; // Importação do Dashboard
+import AdminDashboard from './pages/AdminDashboard';
+import Aprovacoes from './pages/Aprovacoes'; // Importação da tela nova
 
 function App() {
   return (
@@ -51,10 +52,15 @@ function App() {
           </ProtectedRoute>
         } />
 
-        {/* Nova Rota: Admin Dashboard */}
         <Route path="/admin/dashboard" element={
           <ProtectedRoute adminOnly={true}>
             <AdminDashboard />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/admin/aprovacoes" element={
+          <ProtectedRoute adminOnly={true}>
+            <Aprovacoes />
           </ProtectedRoute>
         } />
 

@@ -3,6 +3,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import api from '../services/api';
 import Select from 'react-select';
+import { z } from 'zod';
+
+// 🛡️ O MOLDE ZOD (Validação da Apuração)
+const resultadoSchema = z.object({
+    opcao_vencedora_id: z.coerce.number().positive('Por favor, selecione o palpite vencedor.')
+});
 
 export default function ResultadoCampanha() {
     const { campanhaId } = useParams();
@@ -14,6 +20,9 @@ export default function ResultadoCampanha() {
     const [opcoes, setOpcoes] = useState<any[]>([]);
     const [opcaoVencedora, setOpcaoVencedora] = useState<string>('');
     
+    // 👇 ESTADO PARA OS ERROS DO ZOD
+    const [errosForm, setErrosForm] = useState<{ [key: string]: string }>({});
+    
     const [mostrarModalConfirma, setMostrarModalConfirma] = useState(false);
     const [jaApurada, setJaApurada] = useState(false);
 
@@ -24,7 +33,7 @@ export default function ResultadoCampanha() {
                 const opcoesEncontradas = res.data.campanhaOpcoes || res.data.opcoes || res.data.CampanhaOpcoes || [];
                 setOpcoes(opcoesEncontradas);
 
-                // --- Lógica de Bloqueio: Verifica se já existe um vencedor ---
+                // Lógica de Bloqueio: Verifica se já existe um vencedor
                 const resultadoExistente = opcoesEncontradas.find((op: any) => op.eh_resultado_final === true);
                 if (resultadoExistente) {
                     setJaApurada(true);
@@ -41,11 +50,24 @@ export default function ResultadoCampanha() {
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (jaApurada) return; // Segurança extra
-        if (!opcaoVencedora) {
-            toast.error('Selecione uma opção vencedora!');
-            return;
+        if (jaApurada) return; 
+        
+        setErrosForm({}); // Limpa erros antigos
+
+        // 🛡️ Validação Zod
+        const validacao = resultadoSchema.safeParse({ opcao_vencedora_id: opcaoVencedora });
+
+        if (!validacao.success) {
+            const errosFormatados: { [key: string]: string } = {};
+            validacao.error.issues.forEach(issue => {
+                errosFormatados[issue.path[0] as string] = issue.message;
+            });
+            setErrosForm(errosFormatados);
+            toast.error('Verifique o campo destacado em vermelho.');
+            return; 
         }
+
+        // Se passou na validação, abre o modal de certeza absoluta
         setMostrarModalConfirma(true);
     };
 
@@ -68,6 +90,32 @@ export default function ResultadoCampanha() {
         }
     };
 
+    // ESTILOS DINÂMICOS DO SELECT
+    const getCustomStyles = (hasError: boolean) => ({
+        control: (base: any, state: any) => ({
+            ...base,
+            cursor: jaApurada ? 'not-allowed' : 'pointer', padding: '4px', borderRadius: '8px',
+            borderColor: hasError ? '#ef4444' : (state.isFocused ? '#3b82f6' : '#d1d5db'),
+            boxShadow: state.isFocused ? '0 0 0 3px rgba(59, 130, 246, 0.2)' : 'none',
+            '&:hover': { borderColor: hasError ? '#ef4444' : (state.isFocused ? '#3b82f6' : '#9ca3af') }
+        }),
+        option: (base: any) => ({ ...base, cursor: jaApurada ? 'not-allowed' : 'pointer' }),
+        menu: (base: any) => ({ ...base, zIndex: 100 }),
+        menuList: (base: any) => ({
+            ...base,
+            '::-webkit-scrollbar': { width: '8px' },
+            '::-webkit-scrollbar-track': { background: 'transparent' },
+            '::-webkit-scrollbar-thumb': { background: '#6b7280', borderRadius: '8px' },
+            '::-webkit-scrollbar-thumb:hover': { background: '#4b5563' }
+        })
+    });
+
+    // COMPONENTE DE MENSAGEM DE ERRO
+    const ErrorMessage = ({ mensagem }: { mensagem?: string }) => {
+        if (!mensagem) return null;
+        return <span style={{ color: '#ef4444', fontSize: '0.85rem', marginTop: '4px', display: 'block', fontWeight: '500' }}>⚠️ {mensagem}</span>;
+    };
+
     if (carregando) {
         return (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
@@ -86,7 +134,7 @@ export default function ResultadoCampanha() {
             </p>
 
             <div className="card" style={{ padding: '30px 40px' }}>
-                <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                <form onSubmit={handleSubmit} noValidate style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                     
                     <div>
                         <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#4b5563', fontSize: '0.95rem' }}>
@@ -98,27 +146,28 @@ export default function ResultadoCampanha() {
                                 Nenhuma opção cadastrada.
                             </div>
                         ) : (
-                            <Select 
-                                placeholder={jaApurada ? "Campanha já apurada" : "-- Escolha a opção correta --"}
-                                isDisabled={salvando || jaApurada} // <--- BLOQUEADO SE JÁ APURADA
-                                options={opcoes.map(opcao => ({
-                                    value: String(opcao.id),
-                                    label: opcao.descricao
-                                }))}
-                                value={
-                                    opcaoVencedora 
-                                    ? { value: opcaoVencedora, label: opcoes.find(o => String(o.id) === opcaoVencedora)?.descricao } 
-                                    : null
-                                }
-                                onChange={(selecionado: any) => {
-                                    setOpcaoVencedora(selecionado ? selecionado.value : '');
-                                }}
-                                maxMenuHeight={160} 
-                                styles={{ 
-                                    control: (base) => ({ ...base, cursor: jaApurada ? 'not-allowed' : 'pointer', padding: '4px' }),
-                                    option: (base) => ({ ...base, cursor: jaApurada ? 'not-allowed' : 'pointer' })
-                                }}
-                            />
+                            <>
+                                <Select 
+                                    placeholder={jaApurada ? "Campanha já apurada" : "-- Escolha a opção correta --"}
+                                    isDisabled={salvando || jaApurada} 
+                                    options={opcoes.map(opcao => ({
+                                        value: String(opcao.id),
+                                        label: opcao.descricao
+                                    }))}
+                                    value={
+                                        opcaoVencedora 
+                                        ? { value: opcaoVencedora, label: opcoes.find(o => String(o.id) === opcaoVencedora)?.descricao } 
+                                        : null
+                                    }
+                                    onChange={(selecionado: any) => {
+                                        setOpcaoVencedora(selecionado ? selecionado.value : '');
+                                        if (errosForm.opcao_vencedora_id) setErrosForm({}); // Limpa o erro ao selecionar
+                                    }}
+                                    maxMenuHeight={160} 
+                                    styles={getCustomStyles(!!errosForm.opcao_vencedora_id)}
+                                />
+                                <ErrorMessage mensagem={errosForm.opcao_vencedora_id} />
+                            </>
                         )}
                     </div>
 
@@ -137,15 +186,15 @@ export default function ResultadoCampanha() {
                             type="submit" 
                             className="btn" 
                             style={{ 
-                                flex: 2, 
-                                backgroundColor: (!opcaoVencedora || salvando || jaApurada) ? '#d1d5db' : '#f59e0b', 
-                                color: (!opcaoVencedora || salvando || jaApurada) ? '#9ca3af' : 'white', 
+                                flex: 2,
+                                backgroundColor: (salvando || jaApurada) ? '#d1d5db' : '#f59e0b', 
+                                color: (salvando || jaApurada) ? '#9ca3af' : 'white', 
                                 padding: '14px', 
                                 fontWeight: 'bold',
-                                cursor: (!opcaoVencedora || salvando || jaApurada) ? 'not-allowed' : 'pointer',
+                                cursor: (salvando || jaApurada) ? 'not-allowed' : 'pointer',
                                 transition: 'all 0.3s ease'
                             }}
-                            disabled={!opcaoVencedora || salvando || jaApurada} // <--- BLOQUEADO SE JÁ APURADA
+                            disabled={salvando || jaApurada} 
                         >
                             {jaApurada ? 'Já Apurado' : (salvando ? 'Processando...' : 'Confirmar e Salvar')}
                         </button>
@@ -153,7 +202,7 @@ export default function ResultadoCampanha() {
                 </form>
             </div>
 
-            {/* MODAL */}
+            {/* MODAL MANTIDO INTACTO */}
             {mostrarModalConfirma && (
                 <div style={{
                     position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,

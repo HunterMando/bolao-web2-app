@@ -112,6 +112,15 @@ export default function Navbar() {
                                         📊 Dashboard
                                     </button>
 
+                                    {/* NOVO BOTÃO DE APROVAÇÕES */}
+                                    <button 
+                                        className="nav-btn"
+                                        onClick={() => navigate('/admin/aprovacoes')} 
+                                        style={{ ...btnStyle, backgroundColor: '#3b82f6', color: 'white' }}
+                                    >
+                                        ✅ Aprovações
+                                    </button>
+
                                     <button 
                                         className="nav-btn"
                                         onClick={() => navigate('/nova-campanha')} 
