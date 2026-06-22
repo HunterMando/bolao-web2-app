@@ -2,69 +2,81 @@ import { Request, Response } from 'express';
 import httpStatus from 'http-status';
 import prisma from '../../prisma';
 import jwt from 'jsonwebtoken';
+import { z } from 'zod';
+
+const JWT_SECRET = process.env.JWT_SECRET || 'minha_chave_secreta_super_segura_123';
+
+// 🛡️ MOLDE ZOD (Criação)
+const campanhaSchema = z.object({
+    nome: z.string().min(3, 'O nome deve ter pelo menos 3 letras.'),
+    codigo_campanha: z.string().min(3, 'O código único deve ter pelo menos 3 caracteres.'),
+    tipo_campanha_id: z.coerce.number().positive('Tipo de campanha inválido.'),
+    dt_inicio: z.string(),
+    dt_fim: z.string(),
+    taxa_operacional: z.coerce.number().min(0, 'A taxa não pode ser negativa.').max(100, 'A taxa máxima é 100%.'),
+    valor_bolao: z.coerce.number().positive('O valor do bolão deve ser maior que zero.'),
+    opcoes: z.array(z.string().min(1, 'As opções não podem estar vazias.')).min(2, 'Mínimo de 2 opções obrigatórias.')
+}).refine(data => new Date(data.dt_fim) > new Date(data.dt_inicio), {
+    message: "A data de encerramento deve ser posterior à data de início."
+}).refine(data => new Date(data.dt_fim) >= new Date(), {
+    message: "Não é possível criar uma campanha com data de encerramento no passado."
+});
+
+// 🛡️ MOLDE ZOD PARA APURAÇÃO
+const resultadoSchema = z.object({
+    opcao_vencedora_id: z.coerce.number().positive('Por favor, selecione uma opção vencedora válida.')
+});
 
 // POST /campanhas
 export const create = async (req: Request, res: Response): Promise<any> => {
+    const validacao = campanhaSchema.safeParse(req.body);
+
+    if (!validacao.success) {
+        return res.status(httpStatus.BAD_REQUEST).json({ erro: validacao.error.issues[0].message });
+    }
+
+    const dados = validacao.data;
+
     try {
-        const { opcoes, nome, dt_inicio, dt_fim, taxa_operacional, valor_bolao, codigo_campanha, tipo_campanha_id } = req.body;
-
-        const dataInicio = new Date(dt_inicio);
-        const dataFim = new Date(dt_fim);
-        const dataAtual = new Date();
-
-        if (dataFim <= dataInicio) return res.status(httpStatus.BAD_REQUEST).json({ erro: 'A data de encerramento deve ser posterior à data de início.' });
-        if (dataFim < dataAtual) return res.status(httpStatus.BAD_REQUEST).json({ erro: 'Não é possível criar uma campanha com data no passado.' });
-
-        // 🔎 O NOSSO ESPIÃO MAIS PODEROSO:
         const reqAny = req as any;
-        console.log("🕵️ DADOS DO USUÁRIO LOGADO:", reqAny.usuario);
-
-        // Tenta capturar o ID de todas as formas possíveis que o token possa ter gerado
-        const usuario_id = reqAny.usuario?.id || reqAny.userId || reqAny.usuario?.usuario_id || reqAny.usuarioId;
+        const usuario_id = reqAny.usuario?.id;
 
         if (!usuario_id) {
-            return res.status(401).json({ erro: 'ID do Administrador não encontrado no token. Faça login novamente.' });
+            return res.status(httpStatus.UNAUTHORIZED).json({ erro: 'Sessão expirada ou Admin não encontrado.' });
         }
 
         const novaCampanha = await prisma.campanha.create({
             data: {
-                nome: nome,
-                dt_inicio: dataInicio,
-                dt_fim: dataFim,
-                taxa_operacional: Number(taxa_operacional),
-                valor_bolao: Number(valor_bolao),
-                codigo_campanha: codigo_campanha,
-                tipo_campanha_id: Number(tipo_campanha_id),
+                nome: dados.nome,
+                dt_inicio: new Date(dados.dt_inicio),
+                dt_fim: new Date(dados.dt_fim),
+                taxa_operacional: dados.taxa_operacional,
+                valor_bolao: dados.valor_bolao,
+                codigo_campanha: dados.codigo_campanha,
+                tipo_campanha_id: dados.tipo_campanha_id,
                 status: true, 
-                usuario_id: Number(usuario_id) // Agora garantimos que isto é um número
+                usuario_id: Number(usuario_id)
             }
         });
 
-        if (opcoes && opcoes.length > 0) {
-            const opcoesData = opcoes.map((descricao: string) => ({
-                descricao: descricao,
-                campanha_id: novaCampanha.id,
-                eh_resultado_final: false,
-                status: true
-            }));
-            await prisma.campanhaOpcao.createMany({ data: opcoesData });
-        }
+        const opcoesData = dados.opcoes.map((descricao: string) => ({
+            descricao: descricao,
+            campanha_id: novaCampanha.id,
+            eh_resultado_final: false,
+            status: true
+        }));
+        await prisma.campanhaOpcao.createMany({ data: opcoesData });
 
         return res.status(httpStatus.CREATED).json({ mensagem: 'Campanha criada com sucesso!', campanha: novaCampanha });
 
-    } catch (error: any) {
-        console.error('🔥 ERRO DO PRISMA AO CRIAR CAMPANHA:', error);
-        
-        // 🛡️ TRATAMENTO ELEGANTE: Captura o erro P2002 (Código Duplicado no Prisma)
-        if (error.code === 'P2002' && error.meta?.target?.includes('codigo_campanha')) {
-            return res.status(httpStatus.BAD_REQUEST).json({ 
+    } catch (error) {
+        const err = error as any;
+        if (err.code === 'P2002' && err.meta?.target?.includes('codigo_campanha')) {
+            return res.status(httpStatus.CONFLICT).json({ 
                 erro: 'Este Código Único já está a ser utilizado noutra campanha. Por favor, escolha um código diferente.' 
             });
         }
-
-        return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({ 
-            erro: 'Erro interno no servidor. Verifique o terminal.' 
-        });
+        return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({ erro: 'Erro interno no servidor.' });
     }
 };
 
@@ -73,53 +85,37 @@ export const getAll = async (req: Request, res: Response) => {
     try {
         const dataAtual = new Date();
 
-        // 1. AUTO-ENCERRAMENTO JUST-IN-TIME (JIT)
         await prisma.campanha.updateMany({
-            where: {
-                status: true,
-                dt_fim: { lt: dataAtual }
-            },
+            where: { status: true, dt_fim: { lt: dataAtual } },
             data: { status: false }
         });
 
-        // 2. DESCOBRIR QUEM ESTÁ A PEDIR A LISTA
         let adminId = null;
         const authHeader = req.headers.authorization;
 
         if (authHeader && authHeader.startsWith('Bearer ')) {
             const token = authHeader.split(' ')[1];
             try {
-                // Decodificamos o token para ler o conteúdo
-                const decodedPayload: any = jwt.decode(token);
-                
-                // Se for Admin, guardamos o ID dele
-                if (decodedPayload && decodedPayload.tipo_usuario && decodedPayload.tipo_usuario.toUpperCase() === 'ADMIN') {
-                    adminId = decodedPayload.id || decodedPayload.userId || decodedPayload.usuario_id || decodedPayload.usuarioId;
+                // 🔒 Validação real do Token
+                const decodedPayload: any = jwt.verify(token, JWT_SECRET);
+                if (decodedPayload?.tipo_usuario === 'ADMIN') {
+                    adminId = decodedPayload.id;
                 }
             } catch (err) {
-                console.error("⚠️ Erro ao decodificar token no GET /campanhas");
+                // Token inválido, segue como visitante comum
             }
         }
 
-        // 3. O FILTRO MULTI-TENANT: 
-        // Se adminId existir (for Admin), traz SÓ as campanhas dele.
-        // Se for Apostador (adminId = null), traz só as ativas globais.
         const whereClause = adminId ? { usuario_id: Number(adminId) } : { status: true };
 
-        // 4. BUSCAR NO BANCO
         const campanhas = await prisma.campanha.findMany({
             where: whereClause,
-            include: { 
-                tipo_campanha: true,
-                opcoes: true // 👈 Necessário para a aba "Apuradas" no Front-end
-            },
+            include: { tipo_campanha: true, opcoes: true },
             orderBy: { id: 'desc' }
         });
         
         res.status(httpStatus.OK).json(campanhas);
     } catch (error) {
-        // Se der Erro 500 de novo, olhe o terminal do Node.js! Esta linha vai dedurar o motivo exato.
-        console.error("🔥 ERRO NO GET ALL CAMPANHAS:", error);
         res.status(httpStatus.INTERNAL_SERVER_ERROR).json({ erro: 'Erro ao buscar campanhas.' });
     }
 };
@@ -128,71 +124,130 @@ export const getAll = async (req: Request, res: Response) => {
 export const encerrar = async (req: Request, res: Response): Promise<any> => {
     try {
         const { id } = req.params;
+        const reqAny = req as any;
+        const adminId = reqAny.usuario?.id;
 
+        const campanha = await prisma.campanha.findUnique({ 
+            where: { id: Number(id) } 
+        });
+
+        if (!campanha) return res.status(httpStatus.NOT_FOUND).json({ erro: 'Campanha não encontrada.' });
+
+        // 🔒 BLINDAGEM 1: Apenas o dono pode encerrar
+        if (campanha.usuario_id !== Number(adminId)) {
+            return res.status(httpStatus.FORBIDDEN).json({ erro: 'Acesso negado: Esta campanha não lhe pertence.' });
+        }
+
+        // 🔒 BLINDAGEM 2: Verifica se ela já foi apurada (finalizada com vencedor)
+        const jaApurada = await prisma.campanhaOpcao.findFirst({
+            where: { campanha_id: campanha.id, eh_resultado_final: true }
+        });
+
+        if (jaApurada) {
+            return res.status(httpStatus.BAD_REQUEST).json({ 
+                erro: 'Operação inválida: Esta campanha já foi encerrada e finalizada com a apuração dos vencedores.' 
+            });
+        }
+
+        // 🔒 BLINDAGEM 3: Verifica se ela já foi encerrada manualmente antes (fase de apuração)
+        if (campanha.status === false) {
+            return res.status(httpStatus.BAD_REQUEST).json({ 
+                erro: 'Atenção: Esta campanha já se encontra encerrada e aguardando a definição do vencedor.' 
+            });
+        }
+
+        // Se passou por todas as travas, significa que estava ativa (true). Pode encerrar!
         const campanhaAtualizada = await prisma.campanha.update({
             where: { id: Number(id) },
             data: { status: false }
         });
 
-        return res.status(200).json({ 
-            mensagem: 'Campanha encerrada com sucesso!', 
+        return res.status(httpStatus.OK).json({ 
+            mensagem: 'Campanha encerrada com sucesso! Agora ela está pronta para a apuração do resultado.', 
             campanha: campanhaAtualizada 
         });
     } catch (error) {
-        return res.status(500).json({ erro: 'Erro ao encerrar a campanha.' });
+        return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({ erro: 'Erro ao encerrar a campanha.' });
     }
 };
 
-// PATCH /campanhas/:id/resultado (Apurar Vencedor com Transação)
+// PATCH /campanhas/:id/resultado (Apurar Vencedor)
 export const definirResultado = async (req: Request, res: Response): Promise<any> => {
+    const validacao = resultadoSchema.safeParse(req.body);
+
+    if (!validacao.success) {
+        return res.status(httpStatus.BAD_REQUEST).json({ erro: validacao.error.issues[0].message });
+    }
+
     try {
         const { id } = req.params;
         const campanhaId = Number(id);
-        const { opcao_vencedora_id } = req.body;
+        const { opcao_vencedora_id } = validacao.data;
+        const reqAny = req as any;
+        const adminId = reqAny.usuario?.id;
 
-        // --- VERIFICAÇÃO DE SEGURANÇA: Evita re-apuração ---
+        const campanha = await prisma.campanha.findUnique({ where: { id: campanhaId } });
+        if (!campanha) return res.status(httpStatus.NOT_FOUND).json({ erro: 'Campanha não encontrada.' });
+
+        // 🔒 BLINDAGEM DE DONO
+        if (campanha.usuario_id !== Number(adminId)) {
+            return res.status(httpStatus.FORBIDDEN).json({ erro: 'Acesso negado: Você não pode apurar resultados de campanhas alheias.' });
+        }
+
+        // 🔒 BLINDAGEM DE VÍNCULO CRUZADO
+        // Garante que a opção informada no body realmente pertence à campanha informada na URL
+        const opcaoEscolhida = await prisma.campanhaOpcao.findUnique({
+            where: { id: Number(opcao_vencedora_id) }
+        });
+
+        if (!opcaoEscolhida) {
+            return res.status(httpStatus.NOT_FOUND).json({ erro: 'A opção vencedora informada não existe no sistema.' });
+        }
+
+        if (opcaoEscolhida.campanha_id !== campanhaId) {
+            return res.status(httpStatus.BAD_REQUEST).json({ 
+                erro: 'Inconsistência de dados: A opção que você tentou definir como vencedora não pertence a esta campanha!' 
+            });
+        }
+
+        // 🔒 TRAVA DE TEMPO
+        const agora = new Date();
+        if (campanha.status === true && agora.getTime() <= new Date(campanha.dt_fim).getTime()) {
+            return res.status(httpStatus.BAD_REQUEST).json({ erro: 'A campanha ainda está aberta. Aguarde o encerramento para apurar.' });
+        }
+
+        // 🔒 TRAVA DE DUPLICIDADE
         const jaApurada = await prisma.campanhaOpcao.findFirst({
             where: { campanha_id: campanhaId, eh_resultado_final: true }
         });
 
         if (jaApurada) {
-            return res.status(400).json({ erro: 'Esta campanha já foi apurada e o resultado não pode ser alterado.' });
+            return res.status(httpStatus.FORBIDDEN).json({ erro: 'Esta campanha já foi apurada definitivamente. O resultado não pode ser alterado.' });
         }
 
         await prisma.$transaction(async (tx) => {
-            const campanha = await tx.campanha.findUnique({ where: { id: campanhaId } });
-            if (!campanha) throw new Error('Campanha não encontrada');
-
-            const todasApostas = await tx.apostaBolao.findMany({
-                where: { campanha_opcao: { campanha_id: campanhaId } }
-            });
-
-            // Aplica Status Vencedor
+            // Aprova as apostas vencedoras
             await tx.apostaBolao.updateMany({
-                where: { campanha_opcao_id: Number(opcao_vencedora_id) },
+                where: { campanha_opcao_id: Number(opcao_vencedora_id), status: 'APROVADO' },
                 data: { status: 'VENCEDOR' }
             });
 
-            // Aplica Status Perdedor
+            // Reprova as apostas perdedoras
             await tx.apostaBolao.updateMany({
-                where: { 
-                    campanha_opcao: { campanha_id: campanhaId },
-                    campanha_opcao_id: { not: Number(opcao_vencedora_id) } 
-                },
+                where: { campanha_opcao: { campanha_id: campanhaId }, campanha_opcao_id: { not: Number(opcao_vencedora_id) }, status: 'APROVADO' },
                 data: { status: 'PERDEDOR' }
             });
 
-            // Marca a opção como resultado final
+            // Sela a opção como vencedora
             await tx.campanhaOpcao.update({
                 where: { id: Number(opcao_vencedora_id) },
                 data: { eh_resultado_final: true }
             });
         });
 
-        return res.status(200).json({ mensagem: 'Apuração realizada com sucesso!' });
+        return res.status(httpStatus.OK).json({ mensagem: 'Apuração realizada com sucesso!' });
     } catch (error) {
-        console.error('🔥 ERRO NA APURAÇÃO:', error);
-        return res.status(500).json({ erro: 'Erro ao processar apuração.' });
+        return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({ erro: 'Erro ao processar apuração.' });
     }
 };
 
@@ -200,19 +255,15 @@ export const definirResultado = async (req: Request, res: Response): Promise<any
 export const getById = async (req: Request, res: Response): Promise<any> => {
     try {
         const { id } = req.params;
-
         const campanha = await prisma.campanha.findUnique({
             where: { id: Number(id) },
             include: { opcoes : true }
         });
 
-        if (!campanha) {
-            return res.status(404).json({ erro: 'Campanha não encontrada.' });
-        }
+        if (!campanha) return res.status(httpStatus.NOT_FOUND).json({ erro: 'Campanha não encontrada.' });
 
-        return res.status(200).json(campanha);
+        return res.status(httpStatus.OK).json(campanha);
     } catch (error) {
-        console.error('🔥 ERRO AO BUSCAR CAMPANHA POR ID:', error);
-        return res.status(500).json({ erro: 'Erro interno ao buscar detalhes da campanha.' });
+        return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({ erro: 'Erro interno ao buscar detalhes da campanha.' });
     }
 };

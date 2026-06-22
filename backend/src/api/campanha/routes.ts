@@ -7,115 +7,159 @@ const router = Router();
 /**
  * @swagger
  * /campanhas:
- *   post:
- *     summary: Cria uma nova campanha
- *     description: 'Cria uma campanha de apostas e suas opções. Requer token de Administrador.'
- *     tags: [Campanhas]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       201:
- *         description: 'Campanha criada com sucesso.'
- *       400:
- *         description: 'Erro de validação de datas ou código duplicado.'
- */
-router.post('/', autenticar, isAdmin, campanhaController.create);
-
-/**
- * @swagger
- * /campanhas:
  *   get:
  *     summary: Lista campanhas disponíveis
- *     description: 'Retorna campanhas ativas. Se for requisitado por um Admin, retorna o histórico completo (ativas e encerradas) isolado por inquilino.'
+ *     description: 'Retorna campanhas ativas. Se for requisitado por um Admin logado, retorna o histórico completo das SUAS campanhas.'
  *     tags: [Campanhas]
  *     responses:
  *       200:
  *         description: 'Lista recuperada com sucesso.'
+ *   post:
+ *     summary: Cria uma nova campanha
+ *     description: 'Cria uma campanha de apostas e as opções atreladas. Apenas Administradores.'
+ *     tags: [Campanhas]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - nome
+ *               - codigo_campanha
+ *               - tipo_campanha_id
+ *               - dt_inicio
+ *               - dt_fim
+ *               - valor_bolao
+ *               - taxa_operacional
+ *               - opcoes
+ *             properties:
+ *               nome:
+ *                 type: string
+ *                 example: 'Final da Champions League'
+ *               codigo_campanha:
+ *                 type: string
+ *                 example: 'CHAMPIONS2024'
+ *               tipo_campanha_id:
+ *                 type: integer
+ *                 example: 1
+ *               dt_inicio:
+ *                 type: string
+ *                 format: date-time
+ *                 example: '2024-06-01T10:00:00Z'
+ *               dt_fim:
+ *                 type: string
+ *                 format: date-time
+ *                 example: '2024-06-01T20:00:00Z'
+ *               valor_bolao:
+ *                 type: number
+ *                 example: 50.00
+ *               taxa_operacional:
+ *                 type: number
+ *                 example: 10
+ *               opcoes:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 example: ['Real Madrid', 'Borussia Dortmund']
+ *     responses:
+ *       201:
+ *         description: 'Campanha criada com sucesso.'
+ *       400:
+ *         description: 'Erro de validação (Zod).'
+ *       409:
+ *         description: 'Código da campanha já existe.'
  */
 router.get('/', campanhaController.getAll);
-
-/**
- * @swagger
- * /campanhas/{id}/encerrar:
- *   patch:
- *     summary: Encerra uma campanha manualmente
- *     description: 'Muda o status da campanha para fechada. Requer privilégios de Admin.'
- *     tags: [Campanhas]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: integer
- *     responses:
- *       200:
- *         description: 'Campanha encerrada com sucesso.'
- */
-router.patch('/:id/encerrar', autenticar, isAdmin, campanhaController.encerrar);
-
-/**
- * @swagger
- * /campanhas/{id}/resultado:
- *   post:
- *     summary: Define o resultado da campanha (Via POST)
- *     description: 'Apura os ganhadores e distribui status de vencedor/perdedor.'
- *     tags: [Campanhas]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: integer
- *     responses:
- *       200:
- *         description: 'Apuração realizada com sucesso.'
- */
-router.post('/:id/resultado', autenticar, isAdmin, campanhaController.definirResultado);
-
-/**
- * @swagger
- * /campanhas/{id}/resultado:
- *   patch:
- *     summary: Define o resultado da campanha (Via PATCH)
- *     description: 'Rota alternativa para apuração de ganhadores.'
- *     tags: [Campanhas]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: integer
- *     responses:
- *       200:
- *         description: 'Apuração realizada com sucesso.'
- */
-router.patch('/:id/resultado', autenticar, campanhaController.definirResultado);
+router.post('/', autenticar, isAdmin, campanhaController.create);
 
 /**
  * @swagger
  * /campanhas/{id}:
  *   get:
  *     summary: Busca uma campanha por ID
- *     description: 'Traz os detalhes de uma campanha específica e as suas opções de aposta.'
+ *     description: 'Traz os detalhes de uma campanha e as suas opções de aposta.'
  *     tags: [Campanhas]
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
+ *         description: 'ID da campanha.'
  *         schema:
  *           type: integer
+ *           example: 1
  *     responses:
  *       200:
- *         description: 'Detalhes da campanha.'
+ *         description: 'Detalhes recuperados.'
  *       404:
  *         description: 'Campanha não encontrada.'
  */
 router.get('/:id', campanhaController.getById);
+
+/**
+ * @swagger
+ * /campanhas/{id}/encerrar:
+ *   patch:
+ *     summary: Encerra uma campanha manualmente
+ *     description: 'Altera o status para inativo. Apenas o dono da campanha.'
+ *     tags: [Campanhas]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: 'ID da campanha a ser encerrada.'
+ *         schema:
+ *           type: integer
+ *           example: 1
+ *     responses:
+ *       200:
+ *         description: 'Campanha encerrada com sucesso.'
+ *       403:
+ *         description: 'Campanha pertence a outro administrador.'
+ */
+router.patch('/:id/encerrar', autenticar, isAdmin, campanhaController.encerrar);
+
+/**
+ * @swagger
+ * /campanhas/{id}/resultado:
+ *   patch:
+ *     summary: Apura o vencedor da campanha
+ *     description: 'Define a opção vencedora e paga os ganhadores. Apenas o dono da campanha.'
+ *     tags: [Campanhas]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: 'ID da campanha a ser apurada.'
+ *         schema:
+ *           type: integer
+ *           example: 1
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - opcao_vencedora_id
+ *             properties:
+ *               opcao_vencedora_id:
+ *                 type: integer
+ *                 example: 1
+ *     responses:
+ *       200:
+ *         description: 'Apuração concluída.'
+ *       400:
+ *         description: 'Campanha ainda está no prazo.'
+ *       403:
+ *         description: 'Já apurada ou pertence a outro administrador.'
+ */
+router.patch('/:id/resultado', autenticar, isAdmin, campanhaController.definirResultado);
 
 export default router;
